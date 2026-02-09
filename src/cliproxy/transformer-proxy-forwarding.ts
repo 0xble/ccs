@@ -21,13 +21,25 @@ const HOP_BY_HOP_HEADERS = new Set([
   'upgrade',
 ]);
 
+/** Maximum request body size (50MB) — defensive limit for localhost proxy */
+const MAX_BODY_SIZE = 50 * 1024 * 1024;
+
 /**
  * Read full request body as a string.
+ * Rejects with 413 if body exceeds MAX_BODY_SIZE.
  */
 export function readRequestBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    req.on('data', (chunk: Buffer) => chunks.push(chunk));
+    let totalSize = 0;
+    req.on('data', (chunk: Buffer) => {
+      totalSize += chunk.length;
+      if (totalSize > MAX_BODY_SIZE) {
+        req.destroy(new Error('Request body too large'));
+        return;
+      }
+      chunks.push(chunk);
+    });
     req.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
     req.on('error', reject);
   });

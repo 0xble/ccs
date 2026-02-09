@@ -22,7 +22,7 @@ import { detectRunningProxy, waitForProxyHealthy, reclaimOrphanedProxy } from '.
 import { withStartupLock } from '../startup-lock';
 import { killProcessOnPort } from '../../utils/platform-commands';
 import { cleanupTransformerShadowAuthDir } from '../shadow-auth-builder';
-import { regenerateConfig } from '../config-generator';
+import { regenerateConfig, deleteConfigForPort } from '../config-generator';
 
 export interface ProxySessionResult {
   sessionId?: string;
@@ -222,8 +222,7 @@ export function setupCleanupHandlers(
         // so next session generates fresh (avoids stale shadow auth-dir reference)
         cleanupTransformerShadowAuthDir();
         try {
-          const { deleteConfigForPort } = require('../config-generator');
-          (deleteConfigForPort as (port: number) => void)(sessionPort);
+          deleteConfigForPort(sessionPort);
         } catch {
           // Best-effort cleanup
         }

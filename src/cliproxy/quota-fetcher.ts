@@ -57,7 +57,7 @@ export interface QuotaResult {
 }
 
 /** Google Cloud Code API endpoints */
-const ANTIGRAVITY_API_BASE = 'https://cloudcode-pa.googleapis.com';
+export const ANTIGRAVITY_API_BASE = 'https://cloudcode-pa.googleapis.com';
 const ANTIGRAVITY_API_VERSION = 'v1internal';
 
 /** Google OAuth token endpoint */

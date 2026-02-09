@@ -19,6 +19,7 @@ import { escapeShellArg } from '../../utils/shell-executor';
 import { ensureCLIProxyBinary } from '../binary-manager';
 import {
   generateConfig,
+  regenerateConfig,
   getProviderConfig,
   ensureProviderSettings,
   getProviderSettingsPath,
@@ -31,7 +32,13 @@ import { CLIProxyProvider, CLIProxyBackend, PLUS_ONLY_PROVIDERS, ExecutorConfig 
 import { DEFAULT_BACKEND } from '../platform-detector';
 import { configureProviderModel, getCurrentModel } from '../model-config';
 import { resolveProxyConfig, PROXY_CLI_FLAGS } from '../proxy-config-resolver';
-import { supportsModelConfig, isModelBroken, getModelIssueUrl, findModel } from '../model-catalog';
+import {
+  supportsModelConfig,
+  isModelBroken,
+  getModelIssueUrl,
+  findModel,
+  hasTierGatedModels,
+} from '../model-catalog';
 import { CodexReasoningProxy } from '../codex-reasoning-proxy';
 import { ToolSanitizationProxy } from '../tool-sanitization-proxy';
 import {
@@ -50,9 +57,8 @@ import {
 import { loadOrCreateUnifiedConfig } from '../../config/unified-config-loader';
 import { HttpsTunnelProxy } from '../https-tunnel-proxy';
 import { ModelTierTransformerProxy } from '../model-tier-transformer-proxy';
-import { hasTierGatedModels } from '../model-catalog';
 import { createTransformerShadowAuthDir } from '../shadow-auth-builder';
-import { regenerateConfig } from '../config-generator';
+import { ANTIGRAVITY_API_BASE } from '../quota-fetcher';
 
 // Import modular components
 import { waitForProxyReadyWithSpinner, spawnProxy } from './lifecycle-manager';
@@ -541,6 +547,9 @@ export async function execClaudeWithCLIProxy(
   let transformerAuthDir: string | null = null;
 
   if (!useRemoteProxy && provider === 'agy' && hasTierGatedModels('agy')) {
+    // Fallback map uses short model names (e.g. 'claude-opus-4-6-thinking') because
+    // the oauth-model-alias layer resolves 'gemini-claude-*' prefixed catalog IDs to
+    // 'claude-*' upstream names before requests reach the transformer proxy.
     const fallbackMap = unifiedConfig.quota_management?.auto?.model_tier_fallback ?? {
       'claude-opus-4-6-thinking': 'claude-opus-4-5-thinking',
     };
@@ -549,7 +558,7 @@ export async function execClaudeWithCLIProxy(
       try {
         modelTierTransformer = new ModelTierTransformerProxy({
           fallbackMap,
-          upstreamBaseUrl: 'https://cloudcode-pa.googleapis.com',
+          upstreamBaseUrl: ANTIGRAVITY_API_BASE,
           verbose,
         });
         const transformerPort = await modelTierTransformer.start();
