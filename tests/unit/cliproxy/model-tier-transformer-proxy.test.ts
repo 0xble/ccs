@@ -588,6 +588,93 @@ describe('ModelTierTransformerProxy', () => {
       );
     });
 
+    it('should rewrite modelVersion in Antigravity SSE format', async () => {
+      upstream = await createUpstreamMock((_req, res) => {
+        res.writeHead(200, { 'content-type': 'text/event-stream' });
+        // Antigravity native format uses modelVersion, not message.model
+        res.write(
+          'data: ' +
+            JSON.stringify({
+              candidates: [{ content: { parts: [{ text: 'Hello' }] } }],
+              modelVersion: 'claude-opus-4-5-thinking',
+              usageMetadata: { promptTokenCount: 10 },
+            }) +
+            '\n\n'
+        );
+        res.write('data: [DONE]\n\n');
+        res.end();
+      });
+
+      proxy = new ModelTierTransformerProxy({
+        fallbackMap: DEFAULT_FALLBACK,
+        upstreamBaseUrl: `http://127.0.0.1:${upstream.port}`,
+      });
+      const port = await proxy.start();
+
+      const response = await proxyRequest(
+        port,
+        '/v1/messages',
+        JSON.stringify({ model: 'claude-opus-4-6-thinking', stream: true })
+      );
+
+      // Parse SSE events
+      const events = response.body
+        .split('\n\n')
+        .filter((e) => e.trim())
+        .map((e) => {
+          const dataLine = e.split('\n').find((l) => l.startsWith('data: '));
+          if (!dataLine) return null;
+          const json = dataLine.slice(6);
+          if (json === '[DONE]') return { type: 'done' };
+          try {
+            return JSON.parse(json);
+          } catch {
+            return null;
+          }
+        })
+        .filter(Boolean);
+
+      // modelVersion should be rewritten to opus-4-6
+      const antigravityEvent = events.find(
+        (e: Record<string, unknown>) => typeof e.modelVersion === 'string'
+      );
+      expect(antigravityEvent).toBeDefined();
+      expect((antigravityEvent as Record<string, string>).modelVersion).toBe(
+        'claude-opus-4-6-thinking'
+      );
+    });
+
+    it('should rewrite modelVersion in Antigravity non-streaming JSON', async () => {
+      upstream = await createUpstreamMock((_req, res) => {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        // Antigravity non-streaming response format
+        res.end(
+          JSON.stringify({
+            candidates: [{ content: { parts: [{ text: 'Hi' }] }, finishReason: 'STOP' }],
+            modelVersion: 'claude-opus-4-5-20251101-thinking',
+            usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 10 },
+          })
+        );
+      });
+
+      proxy = new ModelTierTransformerProxy({
+        fallbackMap: DEFAULT_FALLBACK,
+        upstreamBaseUrl: `http://127.0.0.1:${upstream.port}`,
+      });
+      const port = await proxy.start();
+
+      const response = await proxyRequest(
+        port,
+        '/v1/messages',
+        JSON.stringify({ model: 'claude-opus-4-6-thinking' })
+      );
+      const body = JSON.parse(response.body);
+      // modelVersion should be rewritten (fuzzy match catches date suffix)
+      expect(body.modelVersion).toBe('claude-opus-4-6-thinking');
+      // candidates should be preserved
+      expect(body.candidates[0].content.parts[0].text).toBe('Hi');
+    });
+
     it('should track responseRewrites in stats', async () => {
       upstream = await createUpstreamMock((req, res) => {
         const url = req.url ?? '';

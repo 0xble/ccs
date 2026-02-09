@@ -235,8 +235,11 @@ function modelMatchesFrom(responseModel: string, from: string): boolean {
 }
 
 /**
- * Rewrite a single SSE event's data line, replacing the model name
- * in message_start events. Non-data lines and other events pass through unchanged.
+ * Rewrite a single SSE event's data line, replacing the model name.
+ * Handles BOTH formats since the transformer sits between CLIProxy and Antigravity:
+ * - Antigravity native format: `{ modelVersion: "claude-opus-4-5-thinking-..." }`
+ * - Anthropic format (fallback): `{ type: "message_start", message: { model: "..." } }`
+ * Non-data lines and other events pass through unchanged.
  */
 function rewriteSSEEvent(event: string, rewrite: ModelRewrite): string {
   const lines = event.split('\n');
@@ -256,35 +259,45 @@ function rewriteSSEEvent(event: string, rewrite: ModelRewrite): string {
 
     try {
       const data = JSON.parse(jsonStr);
+      if (!data || typeof data !== 'object') {
+        processed.push(line);
+        continue;
+      }
 
-      // message_start: rewrite message.model
+      let rewritten = false;
+
+      // Antigravity format: top-level modelVersion field
+      // (CLIProxy reads this to set message.model in Anthropic translation)
       if (
-        data &&
-        typeof data === 'object' &&
+        typeof data.modelVersion === 'string' &&
+        modelMatchesFrom(data.modelVersion, rewrite.from)
+      ) {
+        data.modelVersion = rewrite.to;
+        rewritten = true;
+      }
+
+      // Anthropic format: message_start event with message.model
+      if (
         data.type === 'message_start' &&
         data.message &&
         typeof data.message.model === 'string' &&
         modelMatchesFrom(data.message.model, rewrite.from)
       ) {
         data.message.model = rewrite.to;
-        processed.push('data: ' + JSON.stringify(data));
-        continue;
+        rewritten = true;
       }
 
-      // message_delta final usage may echo model — rewrite if present
-      if (
-        data &&
-        typeof data === 'object' &&
-        typeof data.model === 'string' &&
-        modelMatchesFrom(data.model, rewrite.from)
-      ) {
+      // Anthropic format: top-level model field (message_delta, etc.)
+      if (typeof data.model === 'string' && modelMatchesFrom(data.model, rewrite.from)) {
         data.model = rewrite.to;
-        processed.push('data: ' + JSON.stringify(data));
-        continue;
+        rewritten = true;
       }
 
-      // No match — pass through unchanged
-      processed.push(line);
+      if (rewritten) {
+        processed.push('data: ' + JSON.stringify(data));
+      } else {
+        processed.push(line);
+      }
     } catch {
       // Not valid JSON — pass through
       processed.push(line);
@@ -335,14 +348,22 @@ export function forwardAndRewriteModel(
             try {
               const raw = Buffer.concat(chunks).toString('utf-8');
               const data = JSON.parse(raw);
-              if (
-                data &&
-                typeof data === 'object' &&
-                typeof data.model === 'string' &&
-                modelMatchesFrom(data.model, rewrite.from)
-              ) {
-                data.model = rewrite.to;
-                log?.(`Response model rewritten (JSON): ${rewrite.from} -> ${rewrite.to}`);
+              if (data && typeof data === 'object') {
+                // Antigravity format: modelVersion field
+                if (
+                  typeof data.modelVersion === 'string' &&
+                  modelMatchesFrom(data.modelVersion, rewrite.from)
+                ) {
+                  data.modelVersion = rewrite.to;
+                  log?.(
+                    `Response model rewritten (JSON modelVersion): ${rewrite.from} -> ${rewrite.to}`
+                  );
+                }
+                // Anthropic format: model field
+                if (typeof data.model === 'string' && modelMatchesFrom(data.model, rewrite.from)) {
+                  data.model = rewrite.to;
+                  log?.(`Response model rewritten (JSON model): ${rewrite.from} -> ${rewrite.to}`);
+                }
               }
               const modified = JSON.stringify(data);
               const {
