@@ -32,15 +32,19 @@ export function readRequestBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let totalSize = 0;
+    let destroyed = false;
     req.on('data', (chunk: Buffer) => {
       totalSize += chunk.length;
       if (totalSize > MAX_BODY_SIZE) {
+        destroyed = true;
         req.destroy(new Error('Request body too large'));
         return;
       }
       chunks.push(chunk);
     });
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
+    req.on('end', () => {
+      if (!destroyed) resolve(Buffer.concat(chunks).toString('utf-8'));
+    });
     req.on('error', reject);
   });
 }
@@ -58,6 +62,9 @@ export function buildForwardHeaders(
     if (HOP_BY_HOP_HEADERS.has(key.toLowerCase())) continue;
     if (key.toLowerCase() === 'host') continue;
     if (key.toLowerCase() === 'content-length') continue;
+    // Strip accept-encoding to prevent gzip responses in buffered path
+    // (forwardAndBuffer parses response as UTF-8 string, gzip bytes would corrupt JSON)
+    if (key.toLowerCase() === 'accept-encoding') continue;
     if (value !== undefined) {
       headers[key] = Array.isArray(value) ? value.join(', ') : value;
     }

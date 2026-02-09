@@ -59,6 +59,7 @@ import { HttpsTunnelProxy } from '../https-tunnel-proxy';
 import { ModelTierTransformerProxy } from '../model-tier-transformer-proxy';
 import { createTransformerShadowAuthDir } from '../shadow-auth-builder';
 import { ANTIGRAVITY_API_BASE } from '../quota-fetcher';
+import { DEFAULT_AUTO_QUOTA_CONFIG } from '../../config/unified-config-types';
 
 // Import modular components
 import { waitForProxyReadyWithSpinner, spawnProxy } from './lifecycle-manager';
@@ -550,9 +551,10 @@ export async function execClaudeWithCLIProxy(
     // Fallback map uses short model names (e.g. 'claude-opus-4-6-thinking') because
     // the oauth-model-alias layer resolves 'gemini-claude-*' prefixed catalog IDs to
     // 'claude-*' upstream names before requests reach the transformer proxy.
-    const fallbackMap = unifiedConfig.quota_management?.auto?.model_tier_fallback ?? {
-      'claude-opus-4-6-thinking': 'claude-opus-4-5-thinking',
-    };
+    const fallbackMap =
+      unifiedConfig.quota_management?.auto?.model_tier_fallback ??
+      DEFAULT_AUTO_QUOTA_CONFIG.model_tier_fallback ??
+      {};
 
     if (Object.keys(fallbackMap).length > 0) {
       try {
