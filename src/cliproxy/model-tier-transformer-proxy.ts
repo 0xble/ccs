@@ -10,6 +10,7 @@
  * includes them in round-robin, while actual requests use the fallback model (opus-4-5).
  */
 
+import * as fs from 'fs';
 import * as http from 'http';
 import { URL } from 'url';
 import {
@@ -29,6 +30,8 @@ export interface ModelTierTransformerConfig {
   verbose?: boolean;
   /** Request timeout in ms (default: 120000) */
   timeoutMs?: number;
+  /** Path to debug log file (captures raw response bodies). File-only, won't touch stdout/stderr. */
+  debugLogPath?: string;
 }
 
 export class ModelTierTransformerProxy {
@@ -40,6 +43,7 @@ export class ModelTierTransformerProxy {
   private readonly upstreamBaseUrl: string;
   private readonly verbose: boolean;
   private readonly timeoutMs: number;
+  private readonly debugLogPath: string | null;
   private stats = { modelListInjections: 0, modelRewrites: 0, responseRewrites: 0, passThrough: 0 };
 
   constructor(config: ModelTierTransformerConfig) {
@@ -51,6 +55,13 @@ export class ModelTierTransformerProxy {
     this.upstreamBaseUrl = config.upstreamBaseUrl;
     this.verbose = config.verbose ?? false;
     this.timeoutMs = config.timeoutMs ?? 120000;
+    this.debugLogPath = config.debugLogPath ?? null;
+    if (this.debugLogPath) {
+      fs.writeFileSync(
+        this.debugLogPath,
+        `--- Transformer debug log started ${new Date().toISOString()} ---\n`
+      );
+    }
   }
 
   async start(): Promise<number> {
@@ -135,6 +146,8 @@ export class ModelTierTransformerProxy {
         if (typeof obj.models === 'object' && obj.models !== null && !Array.isArray(obj.models)) {
           // Antigravity returns models as Record<string, object>
           const record = obj.models as Record<string, unknown>;
+          const modelNames = Object.keys(record);
+          this.debugLog(`Model list (${modelNames.length} models): ${modelNames.join(', ')}`);
           for (const ultraModel of Object.keys(this.fallbackMap)) {
             if (!(ultraModel in record)) {
               record[ultraModel] = { displayName: ultraModel };
@@ -182,6 +195,8 @@ export class ModelTierTransformerProxy {
     res: http.ServerResponse
   ): Promise<void> {
     const rawBody = await readRequestBody(req);
+    this.debugLog(`REQUEST headers: ${JSON.stringify(req.headers)}`);
+    this.debugLog(`REQUEST body (first 2000 chars): ${rawBody.slice(0, 2000)}`);
     let forwardBody = rawBody;
     let rewrittenFrom: string | null = null;
 
@@ -195,6 +210,7 @@ export class ModelTierTransformerProxy {
           this.stats.modelRewrites++;
           this.log(`Rewrite model: ${rewrittenFrom} -> ${obj.model}`);
           forwardBody = JSON.stringify(parsed);
+          this.debugLog(`REWRITTEN body (first 2000 chars): ${forwardBody.slice(0, 2000)}`);
         } else {
           this.stats.passThrough++;
         }
@@ -218,7 +234,8 @@ export class ModelTierTransformerProxy {
         res,
         this.timeoutMs,
         { from: fallbackModel, to: rewrittenFrom },
-        (msg: string) => this.log(msg)
+        (msg: string) => this.log(msg),
+        (msg: string) => this.debugLog(msg)
       );
       this.stats.responseRewrites++;
     } else {
@@ -237,6 +254,17 @@ export class ModelTierTransformerProxy {
   private log(msg: string): void {
     if (this.verbose) {
       console.error(`[model-tier-transformer] ${msg}`);
+    }
+    this.debugLog(msg);
+  }
+
+  /** Write to debug log file only (never stdout/stderr) */
+  private debugLog(msg: string): void {
+    if (!this.debugLogPath) return;
+    try {
+      fs.appendFileSync(this.debugLogPath, `[${new Date().toISOString()}] ${msg}\n`);
+    } catch {
+      // Silently ignore write errors
     }
   }
 }

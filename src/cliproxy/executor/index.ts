@@ -559,10 +559,12 @@ export async function execClaudeWithCLIProxy(
 
     if (Object.keys(fallbackMap).length > 0) {
       try {
+        const debugLogPath = '/tmp/ccs-transformer-debug.log';
         modelTierTransformer = new ModelTierTransformerProxy({
           fallbackMap,
           upstreamBaseUrl: ANTIGRAVITY_API_BASE,
           verbose,
+          debugLogPath,
         });
         const transformerPort = await modelTierTransformer.start();
         log(`Model tier transformer started on port ${transformerPort}`);
@@ -787,6 +789,7 @@ export async function execClaudeWithCLIProxy(
 
   // 12. Filter CCS-specific flags before passing to Claude CLI
   const ccsFlags = [
+    '--verbose',
     '--auth',
     '--paste-callback',
     '--port-forward',

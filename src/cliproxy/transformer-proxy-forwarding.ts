@@ -336,7 +336,8 @@ export function forwardAndRewriteModel(
   clientRes: http.ServerResponse,
   timeoutMs: number,
   rewrite: ModelRewrite,
-  log?: (msg: string) => void
+  log?: (msg: string) => void,
+  debugLog?: (msg: string) => void
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const isHttp = upstreamUrl.protocol === 'http:';
@@ -353,6 +354,10 @@ export function forwardAndRewriteModel(
       (upstreamRes) => {
         const contentType = upstreamRes.headers['content-type'] || '';
         const isSSE = contentType.includes('text/event-stream');
+        debugLog?.(
+          `Response status=${upstreamRes.statusCode} content-type=${contentType} isSSE=${isSSE}`
+        );
+        debugLog?.(`Response headers: ${JSON.stringify(upstreamRes.headers)}`);
 
         if (!isSSE) {
           // Non-streaming JSON response — buffer, rewrite model, forward
@@ -361,6 +366,7 @@ export function forwardAndRewriteModel(
           upstreamRes.on('end', () => {
             try {
               const raw = Buffer.concat(chunks).toString('utf-8');
+              debugLog?.(`RAW JSON response (first 2000 chars): ${raw.slice(0, 2000)}`);
               const data = JSON.parse(raw);
               if (data && typeof data === 'object') {
                 const resp = data.response;
@@ -420,28 +426,45 @@ export function forwardAndRewriteModel(
         let buffer = '';
         let rewritten = false;
 
+        let chunkCount = 0;
         upstreamRes.on('data', (chunk: Buffer) => {
-          buffer += chunk.toString('utf8');
+          const chunkStr = chunk.toString('utf8');
+          chunkCount++;
+          debugLog?.(
+            `SSE chunk #${chunkCount} (${chunkStr.length} bytes): ${chunkStr.slice(0, 500)}`
+          );
+          buffer += chunkStr;
 
           // Split on SSE event boundaries
           const events = buffer.split('\n\n');
           buffer = events.pop() || ''; // Keep incomplete event
+          debugLog?.(
+            `SSE split: ${events.length} complete events, buffer=${buffer.length} bytes remaining`
+          );
 
           for (const event of events) {
             if (!event.trim()) continue;
 
+            debugLog?.(`RAW SSE event (first 500 chars): ${event.slice(0, 500)}`);
             const processed = rewriteSSEEvent(event, rewrite);
-            if (!rewritten && processed !== event) {
-              rewritten = true;
-              log?.(`Response model rewritten (SSE): ${rewrite.from} -> ${rewrite.to}`);
+            if (processed !== event) {
+              debugLog?.(`REWRITTEN SSE event (first 500 chars): ${processed.slice(0, 500)}`);
+              if (!rewritten) {
+                rewritten = true;
+                log?.(`Response model rewritten (SSE): ${rewrite.from} -> ${rewrite.to}`);
+              }
             }
             clientRes.write(processed + '\n\n');
           }
         });
 
         upstreamRes.on('end', () => {
+          debugLog?.(
+            `SSE end: chunkCount=${chunkCount}, remaining buffer=${buffer.length} bytes: ${buffer.slice(0, 500)}`
+          );
           try {
             if (buffer.trim()) {
+              debugLog?.(`SSE end buffer content: ${buffer.slice(0, 500)}`);
               const processed = rewriteSSEEvent(buffer, rewrite);
               clientRes.write(processed + '\n\n');
             }
