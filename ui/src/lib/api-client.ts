@@ -3,9 +3,9 @@
  * Phase 03: REST API Routes & CRUD
  */
 
-import type { CLIProxyProvider } from './provider-config';
-
 const BASE_URL = '/api';
+
+export type CLIProxyProvider = string;
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${url}`, {
@@ -183,34 +183,12 @@ export interface CodexQuotaWindow {
   resetAt: string | null;
 }
 
-/** Core Codex usage window (5h/weekly) extracted from raw windows */
-export interface CodexCoreUsageWindow {
-  /** Source window label */
-  label: string;
-  /** Percentage remaining (0-100) */
-  remainingPercent: number;
-  /** Seconds until quota resets, null if unknown */
-  resetAfterSeconds: number | null;
-  /** ISO timestamp when quota resets, null if unknown */
-  resetAt: string | null;
-}
-
-/** Core Codex usage summary with explicit 5h and weekly windows */
-export interface CodexCoreUsageSummary {
-  /** Short-cycle usage limit window (typically 5h) */
-  fiveHour: CodexCoreUsageWindow | null;
-  /** Long-cycle usage limit window (typically weekly) */
-  weekly: CodexCoreUsageWindow | null;
-}
-
 /** Codex quota result */
 export interface CodexQuotaResult {
   /** Whether fetch succeeded */
   success: boolean;
   /** Quota windows (primary, secondary, code review) */
   windows: CodexQuotaWindow[];
-  /** Explicit core usage windows (5h + weekly) for easier reset display */
-  coreUsage?: CodexCoreUsageSummary;
   /** Plan type: free, plus, team, or null if unknown */
   planType: 'free' | 'plus' | 'team' | null;
   /** Timestamp of fetch */
@@ -382,6 +360,67 @@ export interface ProxyStopResult {
   error?: string;
 }
 
+export type ProviderOAuthFlowType = 'authorization_code' | 'device_code';
+
+export interface ProviderCatalogEntry {
+  id: string;
+  displayName: string;
+  oauthFlow: ProviderOAuthFlowType;
+  aliases: string[];
+  logoAssetPath: string | null;
+  features: {
+    supportsQuota: boolean;
+    requiresNickname: boolean;
+    supportsImageAnalysis: boolean;
+  };
+}
+
+export interface ProviderCatalogResponse {
+  version: number;
+  providers: ProviderCatalogEntry[];
+}
+
+export type CliproxySourceMatchStep = 'account_id' | 'email' | 'nickname' | 'alias' | 'unmapped';
+
+export interface CliproxyAccountUsageStats {
+  source: string;
+  provider?: string;
+  accountId?: string;
+  matchStep?: CliproxySourceMatchStep;
+  resolverVersion?: 'v1' | 'v2';
+  successCount: number;
+  failureCount: number;
+  totalTokens: number;
+  lastUsedAt?: string;
+}
+
+export interface CliproxyUnmappedUsageStats {
+  totalRequests: number;
+  successCount: number;
+  failureCount: number;
+  totalTokens: number;
+  sources: Record<string, number>;
+}
+
+export interface CliproxyStats {
+  totalRequests: number;
+  successCount: number;
+  failureCount: number;
+  tokens: {
+    input: number;
+    output: number;
+    total: number;
+  };
+  requestsByModel: Record<string, number>;
+  requestsByProvider: Record<string, number>;
+  accountStats: Record<string, CliproxyAccountUsageStats>;
+  unmapped: CliproxyUnmappedUsageStats;
+  resolverVersion: 'v1' | 'v2';
+  quotaExceededCount: number;
+  retryCount: number;
+  collectedAt: string;
+}
+
 /** Result from checking for CLIProxyAPI updates */
 export interface CliproxyUpdateCheckResult {
   hasUpdate: boolean;
@@ -476,7 +515,7 @@ export const api = {
     restart: () => request<CliproxyRestartResult>('/cliproxy/restart', { method: 'POST' }),
 
     // Stats and models for Overview tab
-    stats: () => request<{ usage: Record<string, unknown> }>('/cliproxy/usage'),
+    stats: () => request<CliproxyStats>('/cliproxy/usage'),
     models: () => request<CliproxyModelsResponse>('/cliproxy/models'),
     updateModel: (provider: string, model: string) =>
       request(`/cliproxy/models/${provider}`, {
@@ -593,6 +632,9 @@ export const api = {
         return res.text();
       },
     },
+  },
+  providers: {
+    catalog: () => request<ProviderCatalogResponse>('/providers/catalog'),
   },
   accounts: {
     list: () => request<{ accounts: Account[]; default: string | null }>('/accounts'),
