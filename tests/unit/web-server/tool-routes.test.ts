@@ -105,6 +105,45 @@ describe('tool-routes', () => {
     }
   });
 
+  it(
+    'exposes droid generic status/config routes',
+    async () => {
+      const { server, baseUrl } = await startApiServer();
+
+      try {
+      const statusResponse = await fetch(`${baseUrl}/api/tools/droid/status`);
+      expect(statusResponse.status).toBe(200);
+      const statusPayload = (await statusResponse.json()) as {
+        healthy?: boolean;
+        checks?: Record<string, unknown>;
+        config?: Record<string, unknown>;
+      };
+      expect(typeof statusPayload.healthy).toBe('boolean');
+      expect(statusPayload.checks).toBeDefined();
+      expect(statusPayload.config).toBeDefined();
+
+      const updateResponse = await fetch(`${baseUrl}/api/tools/droid/config`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          profile: 'factory',
+          endpoint: 'https://droid.example.com',
+        }),
+      });
+      expect(updateResponse.status).toBe(200);
+
+      const configResponse = await fetch(`${baseUrl}/api/tools/droid/config`);
+      expect(configResponse.status).toBe(200);
+      const configPayload = (await configResponse.json()) as { profile?: string; endpoint?: string };
+      expect(configPayload.profile).toBe('factory');
+      expect(configPayload.endpoint).toBe('https://droid.example.com');
+      } finally {
+        await stopServer(server);
+      }
+    },
+    15000
+  );
+
   it('returns 404 for unknown tool IDs', async () => {
     const { server, baseUrl } = await startApiServer();
 

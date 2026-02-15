@@ -62,6 +62,7 @@ The dashboard provides visual management for all account types:
 - **Claude Accounts**: Create isolated instances (work, personal, client)
 - **OAuth Providers**: One-click auth for Gemini, Codex, Antigravity, Kiro, Copilot
 - **API Profiles**: Configure GLM, Kimi with your keys
+- **Tool Adapters**: Manage Cursor, Copilot, and Factory Droid integrations
 - **Health Monitor**: Real-time status across all profiles
 
 **Analytics Dashboard**
@@ -139,6 +140,7 @@ ccs ghcp      # GitHub Copilot (OAuth device flow)
 ccs agy       # Antigravity (OAuth)
 ccs ollama    # Local Ollama (no API key needed)
 ccs glm       # GLM (API key)
+ccs tool droid setup  # Factory Droid setup wizard
 ```
 
 ### Kiro Auth Methods

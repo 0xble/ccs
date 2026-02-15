@@ -8,61 +8,14 @@ import type {
   QuotaResult,
   CodexQuotaResult,
   GeminiCliQuotaResult,
+  CliproxyStats as ApiCliproxyStats,
+  CliproxyAccountUsageStats as ApiAccountUsageStats,
+  CliproxyModelsResponse,
 } from '@/lib/api-client';
 import type { UnifiedQuotaResult } from '@/lib/utils';
 
-/** Per-account usage statistics */
-export interface AccountUsageStats {
-  /** Account email or identifier */
-  source: string;
-  /** Canonical provider after source resolver mapping */
-  provider?: string;
-  /** Account ID used for mapping */
-  accountId?: string;
-  /** Resolver match stage */
-  matchStep?: 'account_id' | 'email' | 'nickname' | 'alias' | 'unmapped';
-  /** Resolver version used for this account stats entry */
-  resolverVersion?: 'v1' | 'v2';
-  /** Number of successful requests */
-  successCount: number;
-  /** Number of failed requests */
-  failureCount: number;
-  /** Total tokens used */
-  totalTokens: number;
-  /** Last request timestamp */
-  lastUsedAt?: string;
-}
-
-export interface UnmappedUsageStats {
-  totalRequests: number;
-  successCount: number;
-  failureCount: number;
-  totalTokens: number;
-  sources: Record<string, number>;
-}
-
-/** CLIProxy usage statistics */
-export interface CliproxyStats {
-  totalRequests: number;
-  successCount: number;
-  failureCount: number;
-  tokens: {
-    input: number;
-    output: number;
-    total: number;
-  };
-  requestsByModel: Record<string, number>;
-  requestsByProvider: Record<string, number>;
-  /** Per-account usage breakdown */
-  accountStats: Record<string, AccountUsageStats>;
-  /** Usage that could not be mapped to a configured account */
-  unmapped: UnmappedUsageStats;
-  /** Resolver version active for this stats snapshot */
-  resolverVersion: 'v1' | 'v2';
-  quotaExceededCount: number;
-  retryCount: number;
-  collectedAt: string;
-}
+export type CliproxyStats = ApiCliproxyStats;
+export type AccountUsageStats = ApiAccountUsageStats;
 
 /** CLIProxy running status */
 export interface CliproxyStatus {
@@ -116,21 +69,6 @@ export function useCliproxyStats(enabled = true) {
     retry: 1,
     staleTime: 3000, // Consider data stale after 3 seconds
   });
-}
-
-/** CLIProxy model from /v1/models endpoint */
-export interface CliproxyModel {
-  id: string;
-  object: string;
-  created: number;
-  owned_by: string;
-}
-
-/** Categorized models response */
-export interface CliproxyModelsResponse {
-  models: CliproxyModel[];
-  byCategory: Record<string, CliproxyModel[]>;
-  totalCount: number;
 }
 
 /**

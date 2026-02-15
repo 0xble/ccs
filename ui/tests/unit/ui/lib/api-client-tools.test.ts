@@ -49,4 +49,19 @@ describe('api.tools.request', () => {
     expect(fetchSpy.mock.calls[0]?.[0]).toBe('/api/tools/cursor/status');
     expect(fetchSpy.mock.calls[1]?.[0]).toBe('/api/cursor/status');
   });
+
+  it('does not fall back when generic route returns non-404 error', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ error: 'Authentication required' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    await expect(api.tools.request('copilot', '/config')).rejects.toThrow(
+      'Authentication required'
+    );
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls[0]?.[0]).toBe('/api/tools/copilot/config');
+  });
 });

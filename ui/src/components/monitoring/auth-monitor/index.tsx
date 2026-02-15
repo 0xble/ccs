@@ -99,12 +99,22 @@ export function AuthMonitor() {
     );
   }
 
-  if (error || accounts.length === 0) {
+  const hasTelemetry = totalRequests > 0 || unmappedRequests > 0 || providerStats.length > 0;
+  if (!hasTelemetry && accounts.length === 0 && !error) {
+    return null;
+  }
+
+  if (error && !hasTelemetry && accounts.length === 0) {
     return null;
   }
 
   return (
     <div className="rounded-xl border border-border overflow-hidden font-mono text-[13px] text-foreground bg-card/50 dark:bg-zinc-900/60 backdrop-blur-sm">
+      {error ? (
+        <div className="px-4 py-2 text-[11px] border-b border-border bg-amber-500/10 text-amber-700 dark:text-amber-300">
+          Live stats degraded: {error.message}
+        </div>
+      ) : null}
       {/* Enhanced Live Header with gradient glow */}
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-gradient-to-r from-emerald-500/5 via-transparent to-transparent dark:from-emerald-500/10">
         <div className="flex items-center gap-2">

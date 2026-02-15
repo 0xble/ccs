@@ -49,11 +49,17 @@ const TOOL_UI_METADATA: Record<string, ToolUiMetadata> = {
     path: '/tools/droid',
     legacyPaths: [],
     iconKey: 'wrench',
-    hasDashboardPage: false,
+    hasDashboardPage: true,
   },
 };
 
 const FALLBACK_TOOL_DESCRIPTORS: ToolDescriptor[] = [
+  {
+    id: 'droid',
+    summary: 'Factory droid integration commands',
+    subcommands: [],
+    hasApiRoutes: true,
+  },
   {
     id: 'copilot',
     summary: 'GitHub Copilot integration commands',
@@ -67,6 +73,13 @@ const FALLBACK_TOOL_DESCRIPTORS: ToolDescriptor[] = [
     hasApiRoutes: true,
   },
 ];
+
+export interface UseToolResult {
+  tool: ToolViewModel | null;
+  isLoading: boolean;
+  error: Error | null;
+  isRegistryReady: boolean;
+}
 
 function toToolViewModel(tool: ToolDescriptor): ToolViewModel {
   const metadata = TOOL_UI_METADATA[tool.id] ?? {
@@ -122,15 +135,24 @@ export function useDashboardTools() {
   };
 }
 
-export function useTool(toolId: string | undefined): ToolViewModel | null {
-  const { data } = useToolRegistry();
+export function useTool(toolId: string | undefined): UseToolResult {
+  const query = useToolRegistry();
 
-  return useMemo(() => {
-    if (!toolId) {
-      return null;
+  let tool: ToolViewModel | null = null;
+  if (toolId) {
+    if (query.data?.tools) {
+      const registeredTool = query.data.tools.find((candidate) => candidate.id === toolId);
+      tool = registeredTool ? toToolViewModel(registeredTool) : null;
+    } else {
+      const fallbackTool = FALLBACK_TOOL_DESCRIPTORS.find((candidate) => candidate.id === toolId);
+      tool = fallbackTool ? toToolViewModel(fallbackTool) : null;
     }
-    const descriptors = data?.tools ?? FALLBACK_TOOL_DESCRIPTORS;
-    const tool = descriptors.find((candidate) => candidate.id === toolId);
-    return tool ? toToolViewModel(tool) : null;
-  }, [data?.tools, toolId]);
+  }
+
+  return {
+    tool,
+    isLoading: query.isLoading,
+    error: (query.error as Error | null) ?? null,
+    isRegistryReady: Array.isArray(query.data?.tools),
+  };
 }

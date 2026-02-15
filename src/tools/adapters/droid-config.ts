@@ -94,7 +94,7 @@ export async function readDroidConfig(): Promise<DroidConfig> {
 
 export async function writeDroidConfigAtomic(config: DroidConfig): Promise<void> {
   const configPath = getDroidConfigPath();
-  const tmpPath = `${configPath}.tmp.${process.pid}`;
+  const tmpPath = `${configPath}.tmp.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}`;
   await fs.mkdir(path.dirname(configPath), { recursive: true });
 
   try {

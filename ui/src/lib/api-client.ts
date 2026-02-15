@@ -402,6 +402,47 @@ export interface ToolDescriptor {
   hasApiRoutes: boolean;
 }
 
+export type CliproxySourceMatchStep = 'account_id' | 'email' | 'nickname' | 'alias' | 'unmapped';
+
+export interface CliproxyAccountUsageStats {
+  source: string;
+  provider?: string;
+  accountId?: string;
+  matchStep?: CliproxySourceMatchStep;
+  resolverVersion?: 'v1' | 'v2';
+  successCount: number;
+  failureCount: number;
+  totalTokens: number;
+  lastUsedAt?: string;
+}
+
+export interface CliproxyUnmappedUsageStats {
+  totalRequests: number;
+  successCount: number;
+  failureCount: number;
+  totalTokens: number;
+  sources: Record<string, number>;
+}
+
+export interface CliproxyStats {
+  totalRequests: number;
+  successCount: number;
+  failureCount: number;
+  tokens: {
+    input: number;
+    output: number;
+    total: number;
+  };
+  requestsByModel: Record<string, number>;
+  requestsByProvider: Record<string, number>;
+  accountStats: Record<string, CliproxyAccountUsageStats>;
+  unmapped: CliproxyUnmappedUsageStats;
+  resolverVersion: 'v1' | 'v2';
+  quotaExceededCount: number;
+  retryCount: number;
+  collectedAt: string;
+}
+
 /** Result from checking for CLIProxyAPI updates */
 export interface CliproxyUpdateCheckResult {
   hasUpdate: boolean;
@@ -496,7 +537,7 @@ export const api = {
     restart: () => request<CliproxyRestartResult>('/cliproxy/restart', { method: 'POST' }),
 
     // Stats and models for Overview tab
-    stats: () => request<{ usage: Record<string, unknown> }>('/cliproxy/usage'),
+    stats: () => request<CliproxyStats>('/cliproxy/usage'),
     models: () => request<CliproxyModelsResponse>('/cliproxy/models'),
     updateModel: (provider: string, model: string) =>
       request(`/cliproxy/models/${provider}`, {

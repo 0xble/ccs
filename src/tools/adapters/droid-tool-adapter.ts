@@ -106,6 +106,21 @@ async function promptWithDefault(label: string, fallback: string): Promise<strin
   });
 }
 
+async function promptApiKey(existingApiKey: string): Promise<string> {
+  const { password } = await import('@inquirer/prompts');
+  const entered = await password({
+    message: existingApiKey
+      ? 'Droid API key (leave blank to keep current key)'
+      : 'Droid API key (optional)',
+    mask: '*',
+  });
+
+  if (entered.trim().length === 0) {
+    return existingApiKey;
+  }
+  return entered;
+}
+
 function normalizeSetupConfig(
   existing: DroidConfig,
   flags: ParsedSetupFlags,
@@ -168,10 +183,7 @@ async function handleSetup(args: string[]): Promise<number> {
           'Droid endpoint',
           flags.endpoint.value ?? existing.endpoint
         ),
-        apiKey: await promptWithDefault(
-          'Droid API key',
-          (flags.key.value ?? existing.apiKey) || ''
-        ),
+        apiKey: await promptApiKey(flags.key.value ?? existing.apiKey),
       };
     } catch (error) {
       if (isPromptCancelled(error)) {

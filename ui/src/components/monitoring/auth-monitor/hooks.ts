@@ -26,7 +26,12 @@ export interface AuthMonitorData {
 /** Hook for computing auth monitor data from CLIProxy auth and stats */
 export function useAuthMonitorData(): AuthMonitorData {
   const { data, isLoading, error } = useCliproxyAuth();
-  const { data: statsData, isLoading: statsLoading, dataUpdatedAt } = useCliproxyStats();
+  const {
+    data: statsData,
+    isLoading: statsLoading,
+    error: statsError,
+    dataUpdatedAt,
+  } = useCliproxyStats();
   const [timeSinceUpdate, setTimeSinceUpdate] = useState('');
 
   // Live countdown showing time since last data update
@@ -112,8 +117,8 @@ export function useAuthMonitorData(): AuthMonitorData {
         const accountEmail = account.email || account.id;
         const accountProviderKey = `${status.provider}:${account.id}`;
         const realStats =
-          accountStatsMap.get(accountEmail) ??
-          accountStatsByProviderAccountId.get(accountProviderKey);
+          accountStatsByProviderAccountId.get(accountProviderKey) ??
+          accountStatsMap.get(accountEmail);
         const success = realStats?.successCount ?? 0;
         const failure = realStats?.failureCount ?? 0;
         tSuccess += success;
@@ -187,7 +192,7 @@ export function useAuthMonitorData(): AuthMonitorData {
     providerStats,
     overallSuccessRate,
     isLoading: isLoading || statsLoading,
-    error: error ?? null,
+    error: (error as Error | null) ?? (statsError as Error | null) ?? null,
     timeSinceUpdate,
   };
 }
