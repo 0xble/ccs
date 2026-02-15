@@ -87,6 +87,24 @@ describe('tool-routes', () => {
     }
   });
 
+  it('returns equivalent payloads for generic and legacy cursor routes', async () => {
+    const { server, baseUrl } = await startApiServer();
+
+    try {
+      const genericResponse = await fetch(`${baseUrl}/api/tools/cursor/status`);
+      const legacyResponse = await fetch(`${baseUrl}/api/cursor/status`);
+
+      expect(genericResponse.status).toBe(200);
+      expect(legacyResponse.status).toBe(200);
+
+      const genericPayload = (await genericResponse.json()) as Record<string, unknown>;
+      const legacyPayload = (await legacyResponse.json()) as Record<string, unknown>;
+      expect(genericPayload).toEqual(legacyPayload);
+    } finally {
+      await stopServer(server);
+    }
+  });
+
   it('returns 404 for unknown tool IDs', async () => {
     const { server, baseUrl } = await startApiServer();
 
@@ -96,6 +114,25 @@ describe('tool-routes', () => {
 
       const payload = (await response.json()) as { error?: string };
       expect(payload.error).toContain('Unknown tool');
+    } finally {
+      await stopServer(server);
+    }
+  });
+
+  it('accepts case-insensitive IDs and safely rejects encoded IDs', async () => {
+    const { server, baseUrl } = await startApiServer();
+
+    try {
+      const upperCaseResponse = await fetch(`${baseUrl}/api/tools/CURSOR/status`);
+      const encodedResponse = await fetch(`${baseUrl}/api/tools/%63ursor/status`);
+
+      expect(upperCaseResponse.status).toBe(200);
+      expect(encodedResponse.status).toBe(404);
+
+      const upperCasePayload = (await upperCaseResponse.json()) as Record<string, unknown>;
+      expect(upperCasePayload).toHaveProperty('authenticated');
+      const encodedPayload = (await encodedResponse.json()) as { error?: string };
+      expect(encodedPayload.error).toContain("Unknown route for tool 'cursor'");
     } finally {
       await stopServer(server);
     }

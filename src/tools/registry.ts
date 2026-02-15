@@ -9,12 +9,6 @@ const BUILTIN_TOOL_ADAPTERS: readonly ToolAdapter[] = [
   copilotToolAdapter,
 ];
 
-const toolAdapterMap = new Map<string, ToolAdapter>();
-
-for (const adapter of BUILTIN_TOOL_ADAPTERS) {
-  toolAdapterMap.set(adapter.id.toLowerCase(), adapter);
-}
-
 function normalizeToolId(id: string): string {
   return id.trim().toLowerCase();
 }
@@ -53,6 +47,53 @@ export interface RegisteredToolRouteBinding extends ToolRouteBinding {
   toolId: string;
 }
 
+function buildToolAdapterMap(adapters: readonly ToolAdapter[]): Map<string, ToolAdapter> {
+  const map = new Map<string, ToolAdapter>();
+  for (const adapter of adapters) {
+    const normalizedId = normalizeToolId(adapter.id);
+    if (normalizedId.length === 0) {
+      throw new Error('Tool adapter id cannot be empty');
+    }
+    const existing = map.get(normalizedId);
+    if (existing) {
+      throw new Error(
+        `Duplicate tool adapter id '${adapter.id}' conflicts with '${existing.id}' (normalized: '${normalizedId}')`
+      );
+    }
+    map.set(normalizedId, adapter);
+  }
+  return map;
+}
+
+function buildToolRouteBindings(adapters: readonly ToolAdapter[]): RegisteredToolRouteBinding[] {
+  const bindings: RegisteredToolRouteBinding[] = [];
+  const seenRouteKeys = new Set<string>();
+
+  for (const adapter of adapters) {
+    for (const binding of adapter.routes ?? []) {
+      const validatedBinding = validateRouteBinding(binding, adapter);
+      const routeKey = `${normalizeToolId(adapter.id)}:${validatedBinding.path}`;
+      if (seenRouteKeys.has(routeKey)) {
+        throw new Error(`Duplicate tool route binding detected (${routeKey})`);
+      }
+      seenRouteKeys.add(routeKey);
+      bindings.push({
+        ...validatedBinding,
+        toolId: adapter.id,
+      });
+    }
+  }
+
+  return bindings;
+}
+
+const toolAdapterMap = buildToolAdapterMap(BUILTIN_TOOL_ADAPTERS);
+const toolRouteBindings = buildToolRouteBindings([...toolAdapterMap.values()]);
+
+export function validateToolAdaptersForStartup(adapters: readonly ToolAdapter[]): void {
+  buildToolRouteBindings([...buildToolAdapterMap(adapters).values()]);
+}
+
 export function listToolAdapters(): ToolAdapter[] {
   return [...toolAdapterMap.values()].sort((a, b) => a.id.localeCompare(b.id));
 }
@@ -62,19 +103,7 @@ export function getToolAdapter(id: string): ToolAdapter | undefined {
 }
 
 export function listToolRouteBindings(): RegisteredToolRouteBinding[] {
-  const bindings: RegisteredToolRouteBinding[] = [];
-
-  for (const adapter of listToolAdapters()) {
-    for (const binding of adapter.routes ?? []) {
-      const validatedBinding = validateRouteBinding(binding, adapter);
-      bindings.push({
-        ...validatedBinding,
-        toolId: adapter.id,
-      });
-    }
-  }
-
-  return bindings;
+  return [...toolRouteBindings];
 }
 
 export function hasToolSubcommand(toolId: string, subcommand: string | undefined): boolean {

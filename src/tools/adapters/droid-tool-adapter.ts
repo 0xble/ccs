@@ -1,86 +1,126 @@
-import { constants as fsConstants } from 'fs';
-import * as fs from 'fs/promises';
-import * as path from 'path';
-import { createInterface } from 'readline/promises';
 import { parseFlag, detectShell, formatExportLine } from '../../commands/env-command';
-import { getCcsDir } from '../../utils/config-manager';
 import { fail, info, ok } from '../../utils/ui';
 import type { ToolAdapter } from '../types';
-
-interface DroidConfig {
-  endpoint: string;
-  profile: string;
-  apiKey: string;
-  updatedAt: string;
-}
+import droidRoutes from '../../web-server/routes/droid-routes';
+import {
+  checkDroidHealth,
+  createDefaultDroidConfig,
+  getDroidConfigPath,
+  getDroidDir,
+  readDroidConfig,
+  writeDroidConfigAtomic,
+  type DroidConfig,
+} from './droid-config';
 
 const DROID_SUBCOMMANDS = ['setup', 'env', 'doctor', 'help', '--help', '-h'] as const;
+const VALID_SHELL_INPUTS = ['auto', 'bash', 'zsh', 'fish', 'powershell'] as const;
 
-function getDroidDir(): string {
-  return path.join(getCcsDir(), 'tools', 'droid');
+interface ParsedSetupFlag {
+  value: string | undefined;
+  provided: boolean;
+  missingValue: boolean;
 }
 
-function getDroidConfigPath(): string {
-  return path.join(getDroidDir(), 'config.json');
+interface ParsedSetupFlags {
+  profile: ParsedSetupFlag;
+  endpoint: ParsedSetupFlag;
+  key: ParsedSetupFlag;
 }
 
-function createDefaultConfig(): DroidConfig {
+interface SetupValidationResult {
+  errors: string[];
+}
+
+function parseSetupFlag(args: string[], name: 'profile' | 'endpoint' | 'key'): ParsedSetupFlag {
+  const exactFlag = `--${name}`;
+  const prefixedFlag = `${exactFlag}=`;
+  const exactIndex = args.findIndex((arg) => arg === exactFlag);
+  if (exactIndex !== -1) {
+    const next = args[exactIndex + 1];
+    if (!next || next.startsWith('--')) {
+      return { value: undefined, provided: true, missingValue: true };
+    }
+    return { value: next, provided: true, missingValue: false };
+  }
+
+  const prefixedArg = args.find((arg) => arg.startsWith(prefixedFlag));
+  if (!prefixedArg) {
+    return { value: undefined, provided: false, missingValue: false };
+  }
+
+  const value = prefixedArg.slice(prefixedFlag.length);
+  if (value.length === 0) {
+    return { value: undefined, provided: true, missingValue: true };
+  }
+
+  return { value, provided: true, missingValue: false };
+}
+
+function parseSetupFlags(args: string[]): ParsedSetupFlags {
   return {
-    endpoint: 'http://127.0.0.1:4317',
-    profile: 'droid',
-    apiKey: '',
-    updatedAt: new Date().toISOString(),
+    profile: parseSetupFlag(args, 'profile'),
+    endpoint: parseSetupFlag(args, 'endpoint'),
+    key: parseSetupFlag(args, 'key'),
   };
 }
 
-async function pathExists(targetPath: string): Promise<boolean> {
-  try {
-    await fs.access(targetPath, fsConstants.F_OK);
-    return true;
-  } catch {
-    return false;
+function validateSetupFlags(flags: ParsedSetupFlags): SetupValidationResult {
+  const errors: string[] = [];
+
+  if (flags.profile.missingValue) {
+    errors.push('--profile requires a value');
   }
+  if (flags.endpoint.missingValue) {
+    errors.push('--endpoint requires a value');
+  }
+  if (flags.key.missingValue) {
+    errors.push('--key requires a value');
+  }
+
+  if (flags.endpoint.provided && !flags.profile.provided) {
+    errors.push('--endpoint requires --profile');
+  }
+  if (flags.key.provided && !flags.profile.provided) {
+    errors.push('--key requires --profile');
+  }
+
+  return { errors };
 }
 
-async function readConfig(): Promise<DroidConfig> {
-  const configPath = getDroidConfigPath();
-  if (!(await pathExists(configPath))) {
-    return createDefaultConfig();
-  }
+function isValidShellInput(value: string): boolean {
+  return VALID_SHELL_INPUTS.includes(value as (typeof VALID_SHELL_INPUTS)[number]);
+}
 
-  try {
-    const raw = await fs.readFile(configPath, 'utf8');
-    const parsed = JSON.parse(raw) as Partial<DroidConfig>;
-    return {
-      endpoint: parsed.endpoint || 'http://127.0.0.1:4317',
-      profile: parsed.profile || 'droid',
-      apiKey: parsed.apiKey || '',
-      updatedAt: parsed.updatedAt || new Date().toISOString(),
-    };
-  } catch {
-    return createDefaultConfig();
+function isPromptCancelled(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
   }
+  return /cancel|canceled|cancelled|force closed|aborted|sigint/i.test(error.message);
 }
 
 async function promptWithDefault(label: string, fallback: string): Promise<string> {
-  const input = createInterface({
-    input: process.stdin,
-    output: process.stdout,
+  const { input } = await import('@inquirer/prompts');
+  return input({
+    message: label,
+    default: fallback,
   });
-  try {
-    const answer = await input.question(`${label} [${fallback}]: `);
-    return answer.trim() || fallback;
-  } finally {
-    input.close();
-  }
 }
 
-async function writeConfigAtomic(config: DroidConfig): Promise<void> {
-  const configPath = getDroidConfigPath();
-  const tmpPath = `${configPath}.tmp.${process.pid}`;
-  await fs.mkdir(path.dirname(configPath), { recursive: true });
-  await fs.writeFile(tmpPath, JSON.stringify(config, null, 2), { mode: 0o600 });
-  await fs.rename(tmpPath, configPath);
+function normalizeSetupConfig(
+  existing: DroidConfig,
+  flags: ParsedSetupFlags,
+  values: { profile?: string; endpoint?: string; apiKey?: string }
+): DroidConfig {
+  const profile = values.profile ?? flags.profile.value ?? existing.profile;
+  const endpoint = values.endpoint ?? flags.endpoint.value ?? existing.endpoint;
+  const apiKey = values.apiKey ?? flags.key.value ?? existing.apiKey;
+
+  return {
+    profile: profile.trim() || createDefaultDroidConfig().profile,
+    endpoint: endpoint.trim() || createDefaultDroidConfig().endpoint,
+    apiKey: apiKey.trim(),
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 function showHelp(): number {
@@ -103,52 +143,50 @@ function showHelp(): number {
 }
 
 async function handleSetup(args: string[]): Promise<number> {
-  const profileFlag = parseFlag(args, 'profile');
-  const endpointFlag = parseFlag(args, 'endpoint');
-  const keyFlag = parseFlag(args, 'key');
-
-  if (endpointFlag && !profileFlag) {
-    console.error(fail('--endpoint requires --profile'));
-    return 1;
-  }
-  if (keyFlag && !profileFlag) {
-    console.error(fail('--key requires --profile'));
+  const flags = parseSetupFlags(args);
+  const validation = validateSetupFlags(flags);
+  if (validation.errors.length > 0) {
+    for (const error of validation.errors) {
+      console.error(fail(error));
+    }
     return 1;
   }
 
-  const existing = await readConfig();
-  let profile = profileFlag || existing.profile;
-  let endpoint = endpointFlag || existing.endpoint;
-  let apiKey = keyFlag || existing.apiKey || '';
+  const existing = await readDroidConfig();
+  let promptValues: { profile?: string; endpoint?: string; apiKey?: string } = {};
 
   const shouldPrompt =
     process.stdin.isTTY === true &&
     process.stdout.isTTY === true &&
-    (!profileFlag || !endpointFlag || !keyFlag);
+    (!flags.profile.provided || !flags.endpoint.provided || !flags.key.provided);
 
   if (shouldPrompt) {
-    profile = await promptWithDefault('Droid profile', profile);
-    endpoint = await promptWithDefault('Droid endpoint', endpoint);
-    apiKey = await promptWithDefault('Droid API key', apiKey || 'none');
-    if (apiKey === 'none') {
-      apiKey = '';
+    try {
+      promptValues = {
+        profile: await promptWithDefault('Droid profile', flags.profile.value ?? existing.profile),
+        endpoint: await promptWithDefault(
+          'Droid endpoint',
+          flags.endpoint.value ?? existing.endpoint
+        ),
+        apiKey: await promptWithDefault(
+          'Droid API key',
+          (flags.key.value ?? existing.apiKey) || ''
+        ),
+      };
+    } catch (error) {
+      if (isPromptCancelled(error)) {
+        console.error(fail('Droid setup cancelled; no changes written.'));
+        return 1;
+      }
+      throw error;
     }
   }
 
-  const config: DroidConfig = {
-    profile: profile.trim() || 'droid',
-    endpoint: endpoint.trim() || 'http://127.0.0.1:4317',
-    apiKey: apiKey.trim(),
-    updatedAt: new Date().toISOString(),
-  };
-  await writeConfigAtomic(config);
+  const config = normalizeSetupConfig(existing, flags, promptValues);
+  await writeDroidConfigAtomic(config);
 
   console.log(ok(`Droid config ready: ${getDroidConfigPath()}`));
   return 0;
-}
-
-function isValidShellInput(value: string): boolean {
-  return ['auto', 'bash', 'zsh', 'fish', 'powershell'].includes(value);
 }
 
 async function handleEnv(args: string[]): Promise<number> {
@@ -162,7 +200,7 @@ async function handleEnv(args: string[]): Promise<number> {
   const shell = detectShell(shellInput === 'zsh' ? 'bash' : shellInput);
   const droidDir = getDroidDir();
   const configPath = getDroidConfigPath();
-  const config = await readConfig();
+  const config = await readDroidConfig();
 
   const exportsMap: Record<string, string> = {
     DROID_HOME: droidDir,
@@ -183,42 +221,57 @@ async function handleEnv(args: string[]): Promise<number> {
 }
 
 async function handleDoctor(): Promise<number> {
-  const droidDir = getDroidDir();
-  const configPath = getDroidConfigPath();
-
   console.log(info('Running droid diagnostics...'));
+  const config = await readDroidConfig();
+  const health = await checkDroidHealth(config);
 
-  let healthy = true;
-
-  if (await pathExists(droidDir)) {
-    console.log(ok(`Directory exists: ${droidDir}`));
+  if (health.checks.directoryExists) {
+    console.log(ok(`Directory exists: ${getDroidDir()}`));
   } else {
-    console.error(fail(`Directory missing: ${droidDir}`));
-    healthy = false;
+    console.error(fail(`Directory missing: ${getDroidDir()}`));
   }
 
-  if (await pathExists(configPath)) {
-    console.log(ok(`Config exists: ${configPath}`));
+  if (health.checks.configExists) {
+    console.log(ok(`Config exists: ${getDroidConfigPath()}`));
   } else {
-    console.error(fail(`Config missing: ${configPath}`));
-    healthy = false;
+    console.error(fail(`Config missing: ${getDroidConfigPath()}`));
   }
 
-  const config = await readConfig();
-  if (config.endpoint) {
+  if (health.checks.endpointConfigured) {
     console.log(ok(`Endpoint configured: ${config.endpoint}`));
   } else {
     console.error(fail('Endpoint is empty in droid config'));
-    healthy = false;
   }
-  if (config.profile) {
+
+  if (health.checks.profileConfigured) {
     console.log(ok(`Profile configured: ${config.profile}`));
   } else {
     console.error(fail('Profile is empty in droid config'));
-    healthy = false;
   }
 
-  return healthy ? 0 : 1;
+  if (health.checks.endpointReachable) {
+    console.log(ok(health.details.endpointMessage));
+  } else {
+    console.error(fail(health.details.endpointMessage));
+  }
+
+  if (health.checks.apiKeyValid === true) {
+    console.log(ok(health.details.apiKeyMessage));
+  } else if (health.checks.apiKeyValid === false) {
+    console.error(fail(health.details.apiKeyMessage));
+  } else {
+    console.log(info(health.details.apiKeyMessage));
+  }
+
+  if (health.checks.modelsAvailable === true) {
+    console.log(ok(health.details.modelsMessage));
+  } else if (health.checks.modelsAvailable === false) {
+    console.error(fail(health.details.modelsMessage));
+  } else {
+    console.log(info(health.details.modelsMessage));
+  }
+
+  return health.healthy ? 0 : 1;
 }
 
 async function handleDroidCommand(args: string[]): Promise<number> {
@@ -248,5 +301,12 @@ export const droidToolAdapter: ToolAdapter = {
   id: 'droid',
   summary: 'Factory droid integration commands',
   subcommands: DROID_SUBCOMMANDS,
+  routes: [
+    {
+      path: '/',
+      auth: 'required',
+      router: droidRoutes,
+    },
+  ],
   run: handleDroidCommand,
 };

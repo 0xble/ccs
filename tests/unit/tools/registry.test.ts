@@ -1,10 +1,13 @@
 import { describe, it, expect } from 'bun:test';
+import { Router } from 'express';
 import {
   getToolAdapter,
   hasToolSubcommand,
   listToolAdapters,
   listToolRouteBindings,
+  validateToolAdaptersForStartup,
 } from '../../../src/tools/registry';
+import type { ToolAdapter } from '../../../src/tools/types';
 
 describe('tool registry', () => {
   it('registers built-in adapters', () => {
@@ -31,9 +34,67 @@ describe('tool registry', () => {
 
     expect(routeIds).toContain('copilot');
     expect(routeIds).toContain('cursor');
-    expect(routeIds).not.toContain('droid');
+    expect(routeIds).toContain('droid');
     expect(bindings.every((binding) => binding.auth === 'required' || binding.auth === 'optional')).toBe(
       true
     );
+  });
+
+  it('rejects duplicate adapter IDs at startup validation', () => {
+    const adapters: ToolAdapter[] = [
+      {
+        id: 'demo',
+        summary: 'Demo A',
+        subcommands: [],
+        run: () => 0,
+      },
+      {
+        id: 'DEMO',
+        summary: 'Demo B',
+        subcommands: [],
+        run: () => 0,
+      },
+    ];
+
+    expect(() => validateToolAdaptersForStartup(adapters)).toThrow(/duplicate tool adapter id/i);
+  });
+
+  it('rejects duplicate route bindings after path normalization', () => {
+    const routerA = Router();
+    const routerB = Router();
+    const adapters: ToolAdapter[] = [
+      {
+        id: 'demo',
+        summary: 'Demo',
+        subcommands: [],
+        routes: [
+          { path: '/status', auth: 'required', router: routerA },
+          { path: '/status/', auth: 'required', router: routerB },
+        ],
+        run: () => 0,
+      },
+    ];
+
+    expect(() => validateToolAdaptersForStartup(adapters)).toThrow(/duplicate tool route binding/i);
+  });
+
+  it('rejects invalid route paths that do not start with slash', () => {
+    const adapters: ToolAdapter[] = [
+      {
+        id: 'demo',
+        summary: 'Demo',
+        subcommands: [],
+        routes: [
+          {
+            path: 'status' as `/${string}`,
+            auth: 'required',
+            router: Router(),
+          },
+        ],
+        run: () => 0,
+      },
+    ];
+
+    expect(() => validateToolAdaptersForStartup(adapters)).toThrow(/must start with '\//i);
   });
 });

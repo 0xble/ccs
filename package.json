@@ -86,6 +86,7 @@
     "postinstall": "node scripts/postinstall.js"
   },
   "dependencies": {
+    "@inquirer/prompts": "^8.2.1",
     "bcrypt": "^6.0.0",
     "boxen": "^5.1.2",
     "chalk": "^4.1.2",
