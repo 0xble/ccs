@@ -20,6 +20,9 @@ type ProviderLike = CLIProxyProvider | string | null | undefined;
 const CLAUDE_DOTTED_VERSION_REGEX = /claude-(sonnet|opus|haiku)-(\d+)\.(\d+)(?=(?:$|-|\[|\(|\/))/gi;
 const CLAUDE_DOTTED_THINKING_REGEX =
   /claude-(sonnet|opus|haiku)-(\d+)\.(\d+)-thinking(?=(?:$|-|\[|\(|\/))/gi;
+const DEPRECATED_ANTIGRAVITY_SONNET_46_THINKING_REGEX =
+  /claude-sonnet-4(?:[.-])6-thinking(?=(?:$|-|\[|\(|\/))/gi;
+const CANONICAL_ANTIGRAVITY_SONNET_46_MODEL = 'claude-sonnet-4-6';
 
 /**
  * Extract provider segment from `/api/provider/{provider}` request paths.
@@ -63,6 +66,17 @@ export function normalizeClaudeDottedThinkingMajorMinor(model: string): string {
 }
 
 /**
+ * Antigravity no longer exposes `claude-sonnet-4-6-thinking`.
+ * Canonicalize legacy aliases to `claude-sonnet-4-6` while preserving suffixes.
+ */
+export function normalizeDeprecatedAntigravityModelAliases(model: string): string {
+  return model.replace(
+    DEPRECATED_ANTIGRAVITY_SONNET_46_THINKING_REGEX,
+    CANONICAL_ANTIGRAVITY_SONNET_46_MODEL
+  );
+}
+
+/**
  * Normalize model ID for a specific provider.
  * Antigravity requires hyphenated Claude major.minor model IDs.
  *
@@ -76,7 +90,8 @@ export function normalizeClaudeDottedThinkingMajorMinor(model: string): string {
  */
 export function normalizeModelIdForProvider(model: string, provider: ProviderLike): string {
   if (!isAntigravityProvider(provider)) return model;
-  return normalizeClaudeDottedMajorMinor(model);
+  const normalizedDottedVersion = normalizeClaudeDottedMajorMinor(model);
+  return normalizeDeprecatedAntigravityModelAliases(normalizedDottedVersion);
 }
 
 /**
@@ -87,7 +102,7 @@ export function normalizeModelIdForProvider(model: string, provider: ProviderLik
  *
  * @example
  * normalizeModelIdForRouting('claude-sonnet-4.6-thinking', null)
- * // => 'claude-sonnet-4-6-thinking'
+ * // => 'claude-sonnet-4-6'
  *
  * @example
  * normalizeModelIdForRouting('claude-sonnet-4.6', null)
@@ -95,9 +110,10 @@ export function normalizeModelIdForProvider(model: string, provider: ProviderLik
  */
 export function normalizeModelIdForRouting(model: string, provider: ProviderLike): string {
   if (isAntigravityProvider(provider)) {
-    return normalizeClaudeDottedMajorMinor(model);
+    return normalizeModelIdForProvider(model, provider);
   }
-  return normalizeClaudeDottedThinkingMajorMinor(model);
+  const normalizedThinking = normalizeClaudeDottedThinkingMajorMinor(model);
+  return normalizeDeprecatedAntigravityModelAliases(normalizedThinking);
 }
 
 /**
@@ -109,7 +125,7 @@ export function normalizeModelIdForRouting(model: string, provider: ProviderLike
  *   { ANTHROPIC_MODEL: 'claude-sonnet-4.6-thinking' },
  *   'agy'
  * )
- * // => { ANTHROPIC_MODEL: 'claude-sonnet-4-6-thinking' }
+ * // => { ANTHROPIC_MODEL: 'claude-sonnet-4-6' }
  */
 export function normalizeModelEnvVarsForProvider(
   envVars: NodeJS.ProcessEnv,

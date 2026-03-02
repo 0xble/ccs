@@ -105,10 +105,17 @@ describe('getEffectiveEnvVars local provider URL normalization', () => {
     });
 
     const env = getEffectiveEnvVars('agy', 8317, settingsPath);
-    expect(env.ANTHROPIC_MODEL).toBe('claude-sonnet-4-6-thinking');
+    expect(env.ANTHROPIC_MODEL).toBe('claude-sonnet-4-6');
     expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('claude-opus-4-6-thinking');
-    expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe('claude-sonnet-4-6-thinking');
+    expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe('claude-sonnet-4-6');
     expect(env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe('claude-haiku-4-5');
+
+    const persisted = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')) as {
+      env: Record<string, string>;
+    };
+    expect(persisted.env.ANTHROPIC_MODEL).toBe('claude-sonnet-4-6');
+    expect(persisted.env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('claude-opus-4-6-thinking');
+    expect(persisted.env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe('claude-sonnet-4-6');
   });
 
   it('migrates codex preset model mappings to canonical IDs', () => {

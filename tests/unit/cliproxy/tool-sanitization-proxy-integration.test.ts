@@ -201,9 +201,7 @@ describe('ToolSanitizationProxy Integration', () => {
         });
 
         expect(lastRequest).not.toBeNull();
-        expect((lastRequest!.body as Record<string, unknown>).model).toBe(
-          'claude-sonnet-4-6-thinking'
-        );
+        expect((lastRequest!.body as Record<string, unknown>).model).toBe('claude-sonnet-4-6');
       } finally {
         proxy.stop();
       }
