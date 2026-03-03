@@ -67,6 +67,34 @@ describe('route-helpers AGY denylist', () => {
     );
   });
 
+  it('keeps AGY denylist enforcement when CCS_DROID_PROVIDER is present', () => {
+    const settingsDir = path.join(tempHome, '.ccs');
+    fs.mkdirSync(settingsDir, { recursive: true });
+    const settingsPath = path.join(settingsDir, 'agy-profile.settings.json');
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify(
+        {
+          env: {
+            ANTHROPIC_BASE_URL: 'http://127.0.0.1:8317/api/provider/agy',
+            ANTHROPIC_AUTH_TOKEN: 'test-token',
+            ANTHROPIC_MODEL: 'claude-sonnet-4-6',
+            ANTHROPIC_DEFAULT_OPUS_MODEL: 'claude-opus-4-6-thinking',
+            ANTHROPIC_DEFAULT_SONNET_MODEL: 'claude-sonnet-4-6',
+            ANTHROPIC_DEFAULT_HAIKU_MODEL: 'claude-haiku-4-5',
+            CCS_DROID_PROVIDER: 'anthropic',
+          },
+        },
+        null,
+        2
+      ) + '\n'
+    );
+
+    expect(() => updateSettingsFile('agy-profile', { model: 'claude-sonnet-4.5' })).toThrow(
+      /denylist/i
+    );
+  });
+
   it('canonicalizes legacy iflow model IDs on settings create', () => {
     createSettingsFile('iflow-profile', 'http://127.0.0.1:8317/api/provider/iflow', 'test-token', {
       model: 'kimi-k2.5',

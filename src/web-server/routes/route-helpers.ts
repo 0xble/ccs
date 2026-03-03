@@ -44,13 +44,17 @@ function resolveProviderForModelCanonicalization(
   baseUrl: unknown,
   providerHint: unknown
 ): CLIProxyProvider | null {
+  const fromBaseUrl = resolveProviderFromBaseUrl(baseUrl);
+  if (fromBaseUrl) {
+    return fromBaseUrl;
+  }
   if (typeof providerHint === 'string' && providerHint.trim().length > 0) {
     const fromProviderHint = mapExternalProviderName(providerHint);
     if (fromProviderHint) {
       return fromProviderHint;
     }
   }
-  return resolveProviderFromBaseUrl(baseUrl);
+  return null;
 }
 
 function getDeniedModelReasonForProvider(
