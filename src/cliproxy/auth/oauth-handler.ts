@@ -37,6 +37,8 @@ import {
   getOAuthConfig,
   ProviderOAuthConfig,
   CLIPROXY_CALLBACK_PROVIDER_MAP,
+  getManagementAuthUrlPath,
+  getManagementOAuthCallbackPath,
   normalizeKiroAuthMethod,
 } from './auth-types';
 import { isHeadlessEnvironment, killProcessOnPort, showStep } from './environment-detector';
@@ -372,8 +374,7 @@ async function handlePasteCallbackMode(
 
     const callbackProvider = CLIPROXY_CALLBACK_PROVIDER_MAP[provider] || provider;
 
-    // Note: /oauth-callback is a CLIProxyAPI endpoint (not /v0/management prefix)
-    const callbackResponse = await fetch(buildProxyUrl(target, '/oauth-callback'), {
+    const callbackResponse = await fetch(buildProxyUrl(target, getManagementOAuthCallbackPath()), {
       method: 'POST',
       headers: buildManagementHeaders(target, { 'Content-Type': 'application/json' }),
       body: JSON.stringify({
