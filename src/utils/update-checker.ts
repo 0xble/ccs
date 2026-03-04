@@ -44,8 +44,15 @@ function parseVersion(version: string): ParsedVersion {
   // Remove leading 'v' if present
   const cleaned = version.replace(/^v/, '');
 
-  // Match: X.Y.Z or X.Y.Z-prerelease.N
-  const match = cleaned.match(/^(\d+)\.(\d+)\.(\d+)(?:-([a-z]+)\.(\d+))?$/i);
+  // Match: X.Y.Z with optional prerelease/build metadata
+  // Supports values like:
+  // - 7.52.1
+  // - 5.1.0-dev.3
+  // - 7.52.1-0xble.1.0.6
+  // - 1.2.3-alpha.2+build.7
+  const match = cleaned.match(
+    /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z-]+)(?:\.(\d+))?(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z.-]+)?$/
+  );
 
   if (!match) {
     // Fallback for invalid versions

@@ -195,6 +195,16 @@ describe('Version Comparison Implementation (Phase 4)', () => {
         assert.strictEqual(updateCheckerModule.compareVersionsWithPrerelease('5.0.2', '5.0.2'), 0,
           '5.0.2 should equal 5.0.2');
       });
+
+      it('should treat fork suffixed versions as valid semver-like versions', function () {
+        // Regression: fork version like 7.52.1-0xble.1.0.6 was parsed as invalid,
+        // causing false update prompts against lower stable versions.
+        assert.strictEqual(
+          updateCheckerModule.compareVersionsWithPrerelease('7.52.1-0xble.1.0.6', '7.51.0'),
+          1,
+          '7.52.1-0xble.1.0.6 should be greater than 7.51.0'
+        );
+      });
     });
   });
 
