@@ -37,7 +37,6 @@ import {
   getOAuthConfig,
   ProviderOAuthConfig,
   CLIPROXY_CALLBACK_PROVIDER_MAP,
-  getManagementAuthUrlPath,
   getManagementOAuthCallbackPath,
   normalizeKiroAuthMethod,
 } from './auth-types';
