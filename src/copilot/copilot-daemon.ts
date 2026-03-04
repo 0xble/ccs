@@ -12,7 +12,7 @@ import * as http from 'http';
 import { CopilotDaemonStatus } from './types';
 import { CopilotConfig } from '../config/unified-config-types';
 import { getCopilotDir, getCopilotApiBinPath } from './copilot-package-manager';
-import { verifyCopilotDaemonOwnership } from './daemon-process-ownership';
+import { verifyProcessOwnership } from '../cursor/daemon-process-ownership';
 
 const DAEMON_HEALTH_MARKER = 'server running';
 
@@ -258,7 +258,11 @@ export async function stopDaemon(): Promise<{ success: boolean; error?: string }
   }
 
   try {
-    const ownership = verifyCopilotDaemonOwnership(pid);
+    const ownership = verifyProcessOwnership(pid, (commandLine) => {
+      const lower = commandLine.toLowerCase();
+      // copilot-api is launched as `... copilot-api start --port <n>`
+      return lower.includes('copilot-api') && lower.includes(' start');
+    });
     if (ownership === 'not-running') {
       removePidFile();
       return { success: true };
