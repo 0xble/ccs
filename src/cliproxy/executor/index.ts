@@ -1008,9 +1008,27 @@ export async function execClaudeWithCLIProxy(
     ? cfg.customSettingsPath.replace(/^~/, os.homedir())
     : getProviderSettingsPath(provider);
 
+  // Remove ANTHROPIC_BASE_URL from the settings file before passing to Claude.
+  // The env-resolver sets the correct proxy-chain URL in the process env, but
+  // Claude Code re-applies settings.env via Object.assign at startup and on
+  // hot-reload, which would override the process env with the stale
+  // CLIProxy-direct URL from the settings file.
+  let settingsArg = settingsPath;
+  try {
+    const raw = fs.readFileSync(settingsPath, 'utf-8');
+    const settings = JSON.parse(raw) as Record<string, unknown>;
+    const settingsEnv = settings.env as Record<string, string> | undefined;
+    if (settingsEnv?.ANTHROPIC_BASE_URL) {
+      const { ANTHROPIC_BASE_URL: _, ...envWithoutBaseUrl } = settingsEnv;
+      settingsArg = JSON.stringify({ ...settings, env: envWithoutBaseUrl });
+    }
+  } catch {
+    // Fall through to use original settings path
+  }
+
   let claude: ChildProcess;
   if (needsShell) {
-    const cmdString = [claudeCli, '--settings', settingsPath, ...claudeArgs]
+    const cmdString = [claudeCli, '--settings', settingsArg, ...claudeArgs]
       .map(escapeShellArg)
       .join(' ');
     claude = spawn(cmdString, {
@@ -1020,7 +1038,7 @@ export async function execClaudeWithCLIProxy(
       env,
     });
   } else {
-    claude = spawn(claudeCli, ['--settings', settingsPath, ...claudeArgs], {
+    claude = spawn(claudeCli, ['--settings', settingsArg, ...claudeArgs], {
       stdio: 'inherit',
       windowsHide: true,
       env,

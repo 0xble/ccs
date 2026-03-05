@@ -235,22 +235,27 @@ export function sanitizeToolSchemas(
     if (typeof tool !== 'object' || tool === null) {
       return tool;
     }
-    if (!tool.input_schema || typeof tool.input_schema !== 'object') {
-      return tool;
+
+    // Strip Claude-specific top-level tool properties unsupported by third-party APIs
+    const { defer_loading: _defer, ...toolWithoutClaude } = tool as Record<string, unknown> &
+      typeof tool;
+
+    if (!toolWithoutClaude.input_schema || typeof toolWithoutClaude.input_schema !== 'object') {
+      return toolWithoutClaude as typeof tool;
     }
 
-    const result = sanitizeInputSchema(tool.input_schema);
+    const result = sanitizeInputSchema(toolWithoutClaude.input_schema as Record<string, unknown>);
 
     if (result.removedCount > 0) {
       removedByTool.push({
-        name: tool.name,
+        name: toolWithoutClaude.name,
         removed: result.removedPaths,
       });
       totalRemoved += result.removedCount;
     }
 
     return {
-      ...tool,
+      ...toolWithoutClaude,
       input_schema: result.schema,
     };
   });
